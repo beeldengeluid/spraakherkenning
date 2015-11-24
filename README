@@ -1,4 +1,6 @@
-This directory contains the scripts for converting 16khz mono wav-formatted audio into text using the Kaldi open-source speech recognition system. Before running the decoder for the first time, run ./configure.sh, which should set up the various variables and model locations. 
+This directory contains the scripts for converting 16khz mono wav-formatted audio into text using the Kaldi open-source speech 
+recognition system. Before running the decoder for the first time, run ./configure.sh, which should set up the various 
+variables and model locations. 
 
 There are four variables in configure.sh that can be set:
 - graph_name: 	the name of the directory that contains the recognition graph, which is
@@ -7,22 +9,31 @@ There are four variables in configure.sh that can be set:
 - lm_small:	the name of the language model used during recognition
 - lm_large:	the name of the language model used for rescoring
 
-For performing transcriptions, all source files (16khz, mono, wav) should be placed in a <source-dir>, then run "decode.sh <source-dir> <decode-dir>". When the task is completed, all results will appear in <decode-dir>. Optionally, the <source-dir> may contain a .uem file indicating which parts of which files must be transcribed. Also optionally, the <source-dir> may contian a .stm file, containing a transcription of the source files (or those parts indicated by the .uem file). This can then be used to do an evaluation.
+For performing transcriptions, all source files (16khz, mono, wav) should be placed in a <source-dir>, then run 
+"decode.sh <source-dir> <decode-dir>". When the task is completed, all results will appear in <decode-dir>. Optionally, 
+the <source-dir> may contain a .uem file indicating which parts of which files must be transcribed. Also optionally, 
+the <source-dir> may contian a .stm file, containing a transcription of the source files (or those parts indicated by 
+the .uem file). This can then be used to do an evaluation.
 
 A basic recognition command may look like this:
 
 ./decode.sh ~/audio ~/transcriptions
 
-The main results are produced in ~/transcriptions/1Best.ctm. This file contains a list of all words that were recognised in the audio, with one word per line. 
-The lines follow the standard .ctm format:
+The main results are produced in ~/transcriptions/1Best.ctm. This file contains a list of all words that were recognised in 
+the audio, with one word per line. The lines follow the standard .ctm format:
 
 <source file> 1 <start time> <duration> <word hypothesis> <posterior probability> 
 
-As part of the transcription process, the LIUM speech diarization toolkit is used. The result of this is a a directory named 'liumlog' is created, which contains .seg files that provide information about the speaker diarization. These files are divided into clusters (speakers), indicated with a line starting with ';;'. Each cluster/speaker has a score for FS (Female Studio), FT (Female Telephone), MS (Male Studio), and MT (Male Telephone). 
-Typically the highest value indicates which type of speech this cluster contains. The decoder setup can use this information to perform a recognition task with models matching the speech type.
-Within each cluster in the .seg file, there are lines indicating segments that were identified as coming from a specific speaker. These lines contain the following information:
+As part of the transcription process, the LIUM speech diarization toolkit is used. As a result of this step, a directory named 
+'liumlog' is created, which contains .seg files that provide information about the speaker diarization. These files are 
+divided into clusters (speakers), indicated by a line starting with ';;'. Each cluster/speaker has a score for FS 
+(Female Studio), FT (Female Telephone), MS (Male Studio), and MT (Male Telephone). Typically the highest value indicates 
+which type of speech this cluster contains. The decoder setup can use this information to perform a recognition task with 
+models matching the speech type. Within each cluster in the .seg file, there are lines indicating segments that were 
+identified as coming from a specific speaker. These lines contain the following information:
 
 <source file> <channel> <start frame> <duration in frames> <gender> <band> <environment> <spk label> 
 
-Frames are typically overlapping, start every 10ms, and have a duration of 25ms. Start time is therefore <start frame>/100, duration is sec is <duration in frames>/100+0.025
+Frames are typically overlapping, start every 10ms, and have a duration of 25ms. 
+Start time is therefore <start frame>/100, duration in seconds is <duration in frames>/100+0.025
 
