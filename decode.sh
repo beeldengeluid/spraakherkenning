@@ -183,7 +183,7 @@ if [ $stage -le 4 ]; then
         fi
     done
     for type in MS FS MT FT; do
-        if [ -e $data/$type/1Best.ctm ]
+if [ -e $data/$type/1Best.ctm ]; then
             cat $data/$type/1Best.ctm >>$data/ALL/1Best.raw.ctm
         fi
         if (( $nbest > 0 )) && [ -e $data/$type/NBest.ctm ]; then
