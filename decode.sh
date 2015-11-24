@@ -47,7 +47,6 @@ rnnweight=.5
 speech_types="MS FS MT FT"
 nbest=0
 cts=false
-
 rnn=false
 
 # language models used for rescoring. smallLM must match with the graph of acoustic+language model
@@ -55,6 +54,7 @@ rnn=false
 graph=graph_3gpr
 smallLM=3gpr
 largeLM=4gpr_const
+rnntest=/Volumes/KALDI/rnntest_nce22_vocab100k_hidden320
 
 [ -f ./path.sh ] && . ./path.sh; # source the path.
 
@@ -139,22 +139,18 @@ if [ $stage -le 3 ]; then
         rm -rf $fmmi_decode/$type
         mv -f $fmmi_models/foo $fmmi_decode/$type
         time steps/lmrescore_const_arpa.sh --skip-scoring true $lmloc/$smallLM $lmloc/$largeLM $data/$type $fmmi_decode/$type $rescore/$type
-    done
-fi
 
-# temporary bit to test rnn rescoring
-if [ $stage -le 4 ] && $rnn; then
-    rnntest=/Volumes/KALDI/rnntest_nce22_vocab100k_hidden320
-    for type in $speech_types; do
-        time steps/rnnlmrescore.sh --cmd $cmd --skip-scoring true --rnnlm-ver faster-rnnlm/faster-rnnlm --N $rnnnbest --inv-acwt $inv_acoustic_scale $rnnweight $lmloc/$largeLM $rnntest $data/$type $rescore/$type $rnnrescore/$type
+        if $rnn; then
+            time steps/rnnlmrescore.sh --cmd $cmd --skip-scoring true --rnnlm-ver faster-rnnlm/faster-rnnlm --N $rnnnbest --inv-acwt $inv_acoustic_scale $rnnweight $lmloc/$largeLM $rnntest $data/$type $rescore/$type $rnnrescore/$type
+        fi
     done
-    rescore=$rnnrescore
 fi
 
 # create readable output
 if [ $stage -le 4 ]; then
-
-    rescore=$rnnrescore
+    if  $rnn; then
+        rescore=$rnnrescore
+    fi
 
     acoustic_scale=$(awk -v as=$inv_acoustic_scale 'BEGIN { print 1/as }')
     rm -f $data/ALL/1Best.raw.ctm
@@ -187,8 +183,10 @@ if [ $stage -le 4 ]; then
         fi
     done
     for type in MS FS MT FT; do
-        cat $data/$type/1Best.ctm >>$data/ALL/1Best.raw.ctm
-        if (( $nbest > 0 )); then
+        if [ -e $data/$type/1Best.ctm ]
+            cat $data/$type/1Best.ctm >>$data/ALL/1Best.raw.ctm
+        fi
+        if (( $nbest > 0 )) && [ -e $data/$type/NBest.ctm ]; then
             cat $data/$type/NBest.ctm >>$data/ALL/NBest.raw.ctm
         fi
     done
