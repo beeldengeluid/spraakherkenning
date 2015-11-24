@@ -1,0 +1,37 @@
+This directory contains the scripts for converting 16khz mono wav-formatted audio into text using the Kaldi open-source
+speech recognition system. Before running the decoder for the first time, run ./configure.sh, which should set up the 
+various variables and model locations. 
+
+There are four variables in configure.sh that can be set:
+- graph_name: 	the name of the directory that contains the recognition graph, which is a
+		combination of the acoustic and language models
+- model_root:	the place where the acoustic models can be found
+- lm_small:	the name of the language model used during recognition
+- lm_large:	the name of the language model used for rescoring
+The default values should be ok.
+
+For doing transcriptions, all source files (16khz, mono, wav) should be placed in a <source-dir>, 
+when the task is done, all results will appear in <decode-dir>. Optionally, the <source-dir> may contain a .uem file
+indicating which parts of which files must be transcribed. Also optionally, the <source-dir> may contian a .stm file
+containing a transcription of the source files (or those parts indicated by the .uem file).
+
+A basic recognition could look like:
+
+./decode.sh ~/audio ~/transcriptions
+
+The results are produced in the 1Best.ctm file. This contains a list of all words that were
+recognised in the audio, with one word per line. The lines contain:
+
+<source file> 1 <start time> <duration> <word hypothesis> <posterior probability> 
+
+Furthermore, a directory named 'liumlog' is created, which contains .seg files that provide information
+about the speaker diarization. These files are divided into clusters (speakers), each of which has a score
+for FS (Female Studio), FT (Female Telephone), MS (Male Studio), and MT (Male Telephone). Typically the highest
+value indicates which type of speech this cluster contains.
+For each cluster there are lines indicating segments in the source files. The lines contain:
+
+<source file> <channel> <start frame> <duration in frames> <gender> <band> <environment> <spk label> 
+
+Frames are typically overlapping, start every 10ms, and have a duration of 25ms. Start time is therefore
+<start frame>/100, duration is sec is <duration in frames>/100+0.025
+
