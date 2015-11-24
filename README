@@ -1,4 +1,4 @@
-This directory contains the scripts for converting 16khz mono wav-formatted audio into text using the Kaldi open-source speech 
+These scripts are used to convert 16khz mono wav-formatted audio into text using the Kaldi open-source speech 
 recognition system. Before running the decoder for the first time, run ./configure.sh, which should set up the various 
 variables and model locations. 
 
