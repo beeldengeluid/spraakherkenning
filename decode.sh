@@ -111,6 +111,7 @@ if [ $stage -le 1 ]; then
         cat $data/*.stm | $data/fix-stm | sort -k1,1 -k4,4n >$data/ALL/ref.stm  # if there is a fix-stm module, use it
     fi
     utils/fix_data_dir.sh $data/ALL
+    cp -r $data/ALL/liumlog $result
 fi
 
 ## feature generation
