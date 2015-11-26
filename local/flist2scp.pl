@@ -14,7 +14,9 @@ open(SCP, ">$ARGV[0]/ALL/wav.scp");
 sub do_diarization {
     my %seg;
     my $starttime=shift(@_);
-    system("java -Xmx2024m -jar $lium --fInputMask=$ARGV[0]/foo.wav --sOutputMask=$ARGV[0]/ALL/liumlog/$newsegname.seg $newsegname 2>$ARGV[0]/ALL/liumlog/$newsegname.log");
+    if (! -e "$ARGV[0]/ALL/liumlog/$newsegname.seg") {
+        system("java -Xmx2024m -jar $lium --fInputMask=$ARGV[0]/foo.wav --sOutputMask=$ARGV[0]/ALL/liumlog/$newsegname.seg $newsegname 2>$ARGV[0]/ALL/liumlog/$newsegname.log");
+    }
     open(DIA, "$ARGV[0]/ALL/liumlog/$newsegname.seg") || die "seg file $ARGV[0]/ALL/liumlog/$newsegname.seg not found";
     while(<DIA>) {
         next if (/^;/);

@@ -25,36 +25,41 @@
 #
 
 cmd=run.pl
-nj=4
+nj=4                    # number of jobs used for feature generation and decoding
 stage=1
-num_threads=1
+num_threads=1           # used for decoding
 inv_acoustic_scale=11   # used for 1-best and N-best generation
+
 # for decode_fmllr:
 first_beam=10.0         # Beam used in initial, speaker-indep. pass
 first_max_active=2000   # max-active used in initial pass.
 silence_weight=0.01
 max_active=7000
+
 # for decode_fmmi:
 maxactive=7000
+
 # for decode_fmllr & decode_fmmi:
 acwt=0.083333           # Acoustic weight used in getting fMLLR transforms, and also in lattice generation.
 beam=13.0
 lattice_beam=6.0
 
-rnnnbest=1000
-rnnweight=.5
+rnn=false               # if true, do RNN rescoring
+rnnnbest=100            # if doing RNN rescoring
+rnnweight=0.5           # relative weight of RNN in rescoring
 
-speech_types="MS FS MT FT"
-nbest=0
-cts=false
-rnn=false
+cts=false                       # if true, use CTS models for sections that were detected as CTS by the diarization. Else use BN models.
+speech_types="MS FS MT FT"      # which types of speech to transcribe
+nbest=0                         # if value >0, generate NBest.ctm with this amount of transcription alternatives
+
 
 # language models used for rescoring. smallLM must match with the graph of acoustic+language model
 # largeLM must be a 'const arpa' LM
 graph=graph_3gpr
 smallLM=3gpr
 largeLM=4gpr_const
-rnntest=/Volumes/KALDI/rnntest_nce22_vocab100k_hidden320
+
+rnnLM=/Volumes/KALDI/rnntest_nce22_vocab100k_hidden320        # only relevant if rnn=true
 
 [ -f ./path.sh ] && . ./path.sh; # source the path.
 
@@ -78,13 +83,14 @@ fi
 
 ## These settings should generally be left alone
 result=$2
-data=$2/Intermediate/Data
+inter=$result/Intermediate
+data=$inter/Data
 lmloc=models/LM
-fmllr_decode=$2/Intermediate/fmllr
-fmmi_decode=$2/Intermediate/fmmi
-rescore=$2/Intermediate/rescore
+fmllr_decode=$inter/fmllr
+fmmi_decode=$inter/fmmi
+rescore=$inter/rescore
 orgrescore=$rescore
-rnnrescore=$2/Intermediate/rnnrescore
+rnnrescore=$inter/rnnrescore
 symtab=$lmloc/$largeLM/words.txt
 fmllr_opts="--cmd $cmd --nj $nj --skip-scoring true --num-threads $num_threads --first-beam $first_beam --first-max-active $first_max_active --silence-weight $silence_weight --acwt $acwt --max-active $max_active --beam $beam --lattice-beam $lattice_beam";
 fmmi_opts="--cmd $cmd --nj $nj --skip-scoring true --num-threads $num_threads --acwt $acwt --maxactive $maxactive --beam $beam --lattice-beam $lattice_beam";
@@ -97,10 +103,10 @@ cp -a $1/* $data
 if [ $stage -le 1 ]; then
     ## Process source directory
     find $data -name '*.wav' >$data/test.flist
-    local/flist2scp.pl $data
+    local/flist2scp.pl $data                                                    # main data preparation stage
     cat $data/ALL/utt2spk.tmp | sort -k2,2 -k1,1 -u >$data/ALL/utt2spk
     rm $data/ALL/utt2spk.tmp $data/foo.wav
-    local/change_segment_names.pl $data                                       # change names of utterances to enable sorting on 2 columns simultaneously
+    local/change_segment_names.pl $data                                         # change names of utterances to enable sorting on 2 columns simultaneously
     if [ -e $data/fix-stm ]; then
         cat $data/*.stm | $data/fix-stm | sort -k1,1 -k4,4n >$data/ALL/ref.stm  # if there is a fix-stm module, use it
     fi
@@ -110,15 +116,15 @@ fi
 ## feature generation
 if [ $stage -le 2 ]; then
     ## create mfccs for decoding
-    cp conf/mfcc.conf $2/Intermediate
-    steps/make_mfcc.sh --nj $nj --mfcc-config $2/Intermediate/mfcc.conf $data/ALL $data/ALL/log $2/Intermediate/mfcc || exit 1;
-    steps/compute_cmvn_stats.sh $data/ALL $data/ALL/log $2/Intermediate/mfcc || exit 1;
+    cp conf/mfcc.conf $inter
+    steps/make_mfcc.sh --nj $nj --mfcc-config $inter/mfcc.conf $data/ALL $data/ALL/log $inter/mfcc || exit 1;
+    steps/compute_cmvn_stats.sh $data/ALL $data/ALL/log $inter/mfcc || exit 1;
     ## and make separate folders for speech types
     for type in $speech_types; do
-        cat $data/BWGender | grep $type | uniq | awk '{print $2}' >foo
-        utils/subset_data_dir.sh --spk-list foo $data/ALL $data/$type
+        cat $data/BWGender | grep $type | uniq | awk '{print $2}' >$data/foo
+        utils/subset_data_dir.sh --spk-list $data/foo $data/ALL $data/$type
     done
-    rm foo
+    rm $data/foo
 fi
 
 ## decode
@@ -130,26 +136,32 @@ if [ $stage -le 3 ]; then
 
         echo -n "Duration of $type speech: "
         cat $data/${type}/segments | awk '{s+=$4-$3} END {printf("%.0f", s)}' | local/convert_time.sh
+
+        # fmllr decoding
         time steps/decode_fmllr.sh $fmllr_opts $fmllr_models/$graph $data/$type $fmllr_models/foo
         rm -rf $fmllr_decode/$type
         rm -rf ${fmllr_decode}.si/$type
         mv -f $fmllr_models/foo $fmllr_decode/$type      # standard scripts place results in subdir of model directory..
         mv -f $fmllr_models/foo.si ${fmllr_decode}.si/$type
+
+        # fmmi decoding
         time steps/decode_fmmi.sh $fmmi_opts --transform-dir $fmllr_decode/$type $fmmi_models/$graph $data/$type $fmmi_models/foo
         rm -rf $fmmi_decode/$type
         mv -f $fmmi_models/foo $fmmi_decode/$type
+
+        # largeLM rescoring
         time steps/lmrescore_const_arpa.sh --skip-scoring true $lmloc/$smallLM $lmloc/$largeLM $data/$type $fmmi_decode/$type $rescore/$type
 
         if $rnn; then
-            time steps/rnnlmrescore.sh --cmd $cmd --skip-scoring true --rnnlm-ver faster-rnnlm/faster-rnnlm --N $rnnnbest --inv-acwt $inv_acoustic_scale $rnnweight $lmloc/$largeLM $rnntest $data/$type $rescore/$type $rnnrescore/$type
+            time steps/rnnlmrescore.sh --cmd $cmd --skip-scoring true --rnnlm-ver faster-rnnlm/faster-rnnlm --N $rnnnbest --inv-acwt $inv_acoustic_scale $rnnweight $lmloc/$largeLM $rnnLM $data/$type $rescore/$type $rnnrescore/$type
         fi
     done
 fi
 
-# create readable output
+## create readable output
 if [ $stage -le 4 ]; then
     if  $rnn; then
-        rescore=$rnnrescore
+        rescore=$rnnrescore         # if rnn rescoring was active, then use those results to generate .ctm files
     fi
 
     acoustic_scale=$(awk -v as=$inv_acoustic_scale 'BEGIN { print 1/as }')
@@ -164,7 +176,7 @@ if [ $stage -le 4 ]; then
         numjobs=$(< $orgrescore/$type/num_jobs)
 
         # produce 1-Best with confidence
-        $cmd --max-jobs-run $nj JOB=1:$numjobs $2/Intermediate/log/lat2ctm.$type.JOB.log \
+        $cmd --max-jobs-run $nj JOB=1:$numjobs $inter/log/lat2ctm.$type.JOB.log \
             gunzip -c $rescore/$type/lat.JOB.gz \| \
             lattice-push ark:- ark:- \| \
             lattice-align-words $lmloc/$largeLM/phones/word_boundary.int $fmmi_models/final.mdl ark:- ark:- \| \
@@ -174,7 +186,7 @@ if [ $stage -le 4 ]; then
 
         ## convert lattices into an nbest-ctm (without confidence scores)
         if (( $nbest > 0 )); then
-            $cmd --max-jobs-run $numjobs JOB=1:$numjobs $2/Intermediate/log/lat2nbest.JOB.log \
+            $cmd --max-jobs-run $numjobs JOB=1:$numjobs $inter/log/lat2nbest.JOB.log \
                 gunzip -c $rescore/$type/lat.JOB.gz \| \
                 lattice-to-nbest --acoustic-scale=$acoustic_scale --n=$nbest ark:- ark:- \| \
                 nbest-to-ctm ark:- - \| utils/int2sym.pl -f 5 $symtab \| \
@@ -182,6 +194,7 @@ if [ $stage -le 4 ]; then
             cat $rescore/$type/NBest.*.ctm >$data/$type/NBest.ctm
         fi
     done
+    # if found, use all speech types in the final ctm files
     for type in MS FS MT FT; do
         if [ -e $data/$type/1Best.ctm ]; then
             cat $data/$type/1Best.ctm >>$data/ALL/1Best.raw.ctm
@@ -192,14 +205,16 @@ if [ $stage -le 4 ]; then
     done
 
     # combine the ctms and do postprocessing: sort, combine numbers, restore compounds, filter with glm
-    cat $data/ALL/1Best.raw.ctm | sort -k1,1 -k3,3n | \
+    cat $data/ALL/1Best.raw.ctm | sort -k1,1 -k3,3n | local/remove_hyphens.pl | \
         perl local/combine_numbers.pl | sort -k1,1 -k3,3n | local/compound-restoration.pl | \
         csrfilt.sh -s -i ctm -t hyp local/nbest-eval-2008.glm >$data/ALL/1Best.ctm
-    cat $data/ALL/NBest.raw.ctm | sort -k1,1 -k3,3n | \
-        perl local/combine_numbers.pl | sort -k1,1 -k3,3n | local/compound-restoration.pl | \
-        csrfilt.sh -s -i ctm -t hyp local/nbest-eval-2008.glm >$data/ALL/NBest.ctm
     cp $data/ALL/1Best.ctm $result
-    cp $data/ALL/NBest.ctm $result
+    if (( $nbest > 0 )); then
+        cat $data/ALL/NBest.raw.ctm | sort -k1,1 -k3,3n local/remove_hyphens.pl | \
+            perl local/combine_numbers.pl | sort -k1,1 -k3,3n | local/compound-restoration.pl | \
+            csrfilt.sh -s -i ctm -t hyp local/nbest-eval-2008.glm >$data/ALL/NBest.ctm
+        cp $data/ALL/NBest.ctm $result
+    fi
 fi
 
 # score if reference transcription exists
@@ -207,7 +222,7 @@ if [ $stage -le 5 ]; then
     if [ -s $data/ALL/ref.stm ]; then
         # score using asclite, then produce alignments and reports using sclite
         if [ -e $data/ALL/test.uem ]; then
-            uem="-uem $data/ALL/test.uem"
+           uem="-uem $data/ALL/test.uem"
         fi
         asclite -D -noisg -r $data/ALL/ref.stm stm -h $result/1Best.ctm ctm $uem -o sgml
         cat $result/1Best.ctm.sgml | sclite -P -o sum -o pralign -o dtl -n $result/1Best.ctm

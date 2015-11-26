@@ -29,7 +29,7 @@ use POSIX;
 use Cwd;
 my $dir = getcwd;
 
-my $mapping = "/Volumes/KALDI/Dutch_Decoder/Utils/compounds-release.lst";
+my $mapping = "$dir/local/compounds-release.lst";
 
 my %compound  = ();
 
