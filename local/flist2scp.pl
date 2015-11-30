@@ -66,7 +66,9 @@ sub do_diarization {
     }
 }
 
-system("cat $ARGV[0]/*.uem | sort >$ARGV[0]/ALL/test.uem");
+if (-e "$ARGV[0]/*.uem") {
+    system("cat $ARGV[0]/*.uem | sort >$ARGV[0]/ALL/test.uem");
+}
 if (-s "$ARGV[0]/ALL/test.uem") {
     open(UEM, "$ARGV[0]/ALL/test.uem");
     while(<UEM>) {
@@ -81,8 +83,9 @@ if (-s "$ARGV[0]/ALL/test.uem") {
         $uemstuff{$parts[0]}{$n}{end}=$parts[3];
     }
 }
-
-system("cat $ARGV[0]/*.stm >$ARGV[0]/ALL/test.stm");
+if (-e "$ARGV[0]/*.uem") {
+    system("cat $ARGV[0]/*.stm >$ARGV[0]/ALL/test.stm");
+}
 if (-s "$ARGV[0]/ALL/test.stm") {
     open(STM, "$ARGV[0]/ALL/test.stm");
     while(<STM>) {
@@ -120,7 +123,7 @@ while(<IN>) {
     }
     print STDERR "\n";
 
-    print SCP "$basefile $fullfile\n";
+    print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - remix 1,2 |\n";
 }
 
 # create spk2gender file

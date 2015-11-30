@@ -25,7 +25,7 @@
 #
 
 cmd=run.pl
-nj=4                    # number of jobs used for feature generation and decoding
+nj=4                    # maximum number of simultaneous jobs used for feature generation and decoding
 stage=1
 num_threads=1           # used for decoding
 inv_acoustic_scale=11   # used for 1-best and N-best generation
@@ -45,7 +45,7 @@ beam=13.0
 lattice_beam=6.0
 
 rnn=false               # if true, do RNN rescoring
-rnnnbest=100            # if doing RNN rescoring
+rnnnbest=100            # if doing RNN rescoring use this amount of alternatives
 rnnweight=0.5           # relative weight of RNN in rescoring
 
 cts=false                       # if true, use CTS models for sections that were detected as CTS by the diarization. Else use BN models.
@@ -71,7 +71,7 @@ if [ $# != 2 ]; then
     echo "  "
     echo "main options (for others, see top of script file)"
     echo "  --config <config-file>                   # config containing options"
-    echo "  --nj <nj>                                # number of parallel jobs"
+    echo "  --nj <nj>                                # maximum number of parallel jobs"
     echo "  --cmd <cmd>                              # Command to run in parallel with"
     echo "  --acwt <acoustic-weight>                 # default 0.08333 ... used to get posteriors"
     echo "  --num-threads <n>                        # number of threads to use, default 1."
@@ -92,8 +92,8 @@ rescore=$inter/rescore
 orgrescore=$rescore
 rnnrescore=$inter/rnnrescore
 symtab=$lmloc/$largeLM/words.txt
-fmllr_opts="--cmd $cmd --nj $nj --skip-scoring true --num-threads $num_threads --first-beam $first_beam --first-max-active $first_max_active --silence-weight $silence_weight --acwt $acwt --max-active $max_active --beam $beam --lattice-beam $lattice_beam";
-fmmi_opts="--cmd $cmd --nj $nj --skip-scoring true --num-threads $num_threads --acwt $acwt --maxactive $maxactive --beam $beam --lattice-beam $lattice_beam";
+fmllr_opts="--cmd $cmd --skip-scoring true --num-threads $num_threads --first-beam $first_beam --first-max-active $first_max_active --silence-weight $silence_weight --acwt $acwt --max-active $max_active --beam $beam --lattice-beam $lattice_beam";
+fmmi_opts="--cmd $cmd --skip-scoring true --num-threads $num_threads --acwt $acwt --maxactive $maxactive --beam $beam --lattice-beam $lattice_beam";
 ##
 
 mkdir -p $data/ALL/liumlog $fmllr_decode $fmllr_decode.si $fmmi_decode
@@ -118,7 +118,16 @@ fi
 if [ $stage -le 2 ]; then
     ## create mfccs for decoding
     cp conf/mfcc.conf $inter
-    steps/make_mfcc.sh --nj $nj --mfcc-config $inter/mfcc.conf $data/ALL $data/ALL/log $inter/mfcc || exit 1;
+
+    # determine maximum number of jobs for this task
+    max_nj=$(wc -l $data/ALL/segments | awk '{print $1}')
+    if (( $nj > $max_nj )); then
+        this_nj=$max_nj
+    else
+        this_nj=$nj
+    fi
+
+    steps/make_mfcc.sh --nj $this_nj --mfcc-config $inter/mfcc.conf $data/ALL $data/ALL/log $inter/mfcc || exit 1;
     steps/compute_cmvn_stats.sh $data/ALL $data/ALL/log $inter/mfcc || exit 1;
     ## and make separate folders for speech types
     for type in $speech_types; do
@@ -131,6 +140,16 @@ fi
 ## decode
 if [ $stage -le 3 ]; then
     for type in $speech_types; do
+        # determine number of jobs
+        numspeak=$(wc -l $data/$type/spk2utt | awk '{print $1}')
+        if (( $numspeak == 0 )); then
+            continue
+        elif (( $nj > $numspeak )); then
+            this_nj=$numspeak
+        else
+            this_nj=$nj
+        fi
+
         if [[ $type == *T ]] && $cts; then bw=CTS; else bw=BN; fi
         fmllr_models=models/$bw/fmllr
         fmmi_models=models/$bw/fmmi
@@ -139,14 +158,14 @@ if [ $stage -le 3 ]; then
         cat $data/${type}/segments | awk '{s+=$4-$3} END {printf("%.0f", s)}' | local/convert_time.sh
 
         # fmllr decoding
-        time steps/decode_fmllr.sh $fmllr_opts $fmllr_models/$graph $data/$type $fmllr_models/foo
+        time steps/decode_fmllr.sh $fmllr_opts --nj $this_nj $fmllr_models/$graph $data/$type $fmllr_models/foo
         rm -rf $fmllr_decode/$type
         rm -rf ${fmllr_decode}.si/$type
         mv -f $fmllr_models/foo $fmllr_decode/$type      # standard scripts place results in subdir of model directory..
         mv -f $fmllr_models/foo.si ${fmllr_decode}.si/$type
 
         # fmmi decoding
-        time steps/decode_fmmi.sh $fmmi_opts --transform-dir $fmllr_decode/$type $fmmi_models/$graph $data/$type $fmmi_models/foo
+        time steps/decode_fmmi.sh $fmmi_opts --nj $this_nj --transform-dir $fmllr_decode/$type $fmmi_models/$graph $data/$type $fmmi_models/foo
         rm -rf $fmmi_decode/$type
         mv -f $fmmi_models/foo $fmmi_decode/$type
 
@@ -174,7 +193,11 @@ if [ $stage -le 4 ]; then
         ## convert lattices into a ctm with confidence scores
         if [[ $type == *T ]] && $cts; then bw=CTS; else bw=BN; fi
         fmmi_models=models/$bw/fmmi
-        numjobs=$(< $orgrescore/$type/num_jobs)
+        if [ -e $orgrescore/$type/num_jobs ]; then
+            numjobs=$(< $orgrescore/$type/num_jobs)
+        else
+            continue
+        fi
 
         # produce 1-Best with confidence
         $cmd --max-jobs-run $nj JOB=1:$numjobs $inter/log/lat2ctm.$type.JOB.log \
