@@ -5,7 +5,7 @@ sub change_names {
     my $column=shift(@_);
     my @out;
     
-    open(IN, "$ARGV[0]/ALL/$file");
+    open(IN, "$file");
     while(<IN>) {
         chop;
         @parts=split;
@@ -13,7 +13,7 @@ sub change_names {
         push(@out, join(" ", @parts));
     }
     
-    open(OUT, ">$ARGV[0]/ALL/$file");
+    open(OUT, ">$file");
     foreach $line (@out) {
         print OUT "$line\n";
     }
@@ -37,4 +37,8 @@ foreach $line (@utt2spk) {
     print OUT "$line\n";
 }
 
-change_names(segments, 0);
+# system("cp $ARGV[0]/ALL/segments $ARGV[0]/ALL/segments.orig");
+change_names("$ARGV[0]/ALL/segments", 0);
+# system("cp $ARGV[0]/BWGender $ARGV[0]/BWGender.orig");
+change_names("$ARGV[0]/BWGender", 1);
+

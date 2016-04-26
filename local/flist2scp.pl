@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+use File::Find;
+
 $|=1;
 $diarisation=1;
 $lium="lib/lium_spkdiarization-8.4.1.jar";
@@ -12,6 +14,7 @@ open(TXT, ">$ARGV[0]/ALL/text_ref");
 open(SCP, ">$ARGV[0]/ALL/wav.scp");
 
 sub do_diarization {
+    my %channel;
     my %seg;
     my $starttime=shift(@_);
     if (! -e "$ARGV[0]/ALL/liumlog/$newsegname.seg") {
@@ -40,13 +43,23 @@ sub do_diarization {
     foreach $start (sort {$a <=> $b} keys %seg) {
         $count++;
         my $fullnewsegname=sprintf("%s.%03d", $newsegname, $count);
-        $line=sprintf("%s %s %.3f %.3f", $fullnewsegname, $basefile, $starttime+($start/100), $starttime+$seg{$start}{end});
-        print SEG "$line\n";
+        my $speaker=$seg{$start}{speaker};
         $speakername="$newsegname-$seg{$start}{speaker}";
+        if ($ARGV[1] eq 'true') {
+            # make sure the correct channel is picked for the ASR
+            if (!$channel{$speaker}) {
+                $channel{$speaker}=`local/spk2channel.sh $speaker $ARGV[0]/foo.wav $ARGV[0]/ALL/liumlog/$newsegname.seg`;
+                chop($channel{$speaker});
+            }
+            $line=sprintf("%s %s %.3f %.3f", $fullnewsegname, "$basefile.$channel{$speaker}", $starttime+($start/100), $starttime+$seg{$start}{end});
+        } else {
+            $line=sprintf("%s %s %.3f %.3f", $fullnewsegname, $basefile, $starttime+($start/100), $starttime+$seg{$start}{end});
+        }
+        print SEG "$line\n";
         $line=sprintf("%s %s", $fullnewsegname, $speakername);
         print UTT "$line\n";
         
-        print SPEAKERS uc($seg{$start}{gender}).uc($seg{$start}{band})." $speakername\n";
+        print SPEAKERS uc($seg{$start}{gender}).uc($seg{$start}{band})." $fullnewsegname\n";
         $speakerlist{$speakername}=$seg{$start}{gender};
     }
     print STDERR "$newsegname: $count segments found\r";
@@ -66,9 +79,10 @@ sub do_diarization {
     }
 }
 
-if (-e "$ARGV[0]/*.uem") {
+if (-e <$ARGV[0]/*.uem>) {
     system("cat $ARGV[0]/*.uem | sort >$ARGV[0]/ALL/test.uem");
 }
+
 if (-s "$ARGV[0]/ALL/test.uem") {
     open(UEM, "$ARGV[0]/ALL/test.uem");
     while(<UEM>) {
@@ -83,9 +97,11 @@ if (-s "$ARGV[0]/ALL/test.uem") {
         $uemstuff{$parts[0]}{$n}{end}=$parts[3];
     }
 }
-if (-e "$ARGV[0]/*.uem") {
+
+if (-e <$ARGV[0]/*.stm>) {
     system("cat $ARGV[0]/*.stm >$ARGV[0]/ALL/test.stm");
 }
+
 if (-s "$ARGV[0]/ALL/test.stm") {
     open(STM, "$ARGV[0]/ALL/test.stm");
     while(<STM>) {
@@ -105,25 +121,42 @@ if($diarisation) {
 
 open(IN, "$ARGV[0]/test.flist");
 while(<IN>) {
-    chop;
-    m:^\S+/(.+)\.wav$: || die "Bad line $_";
+   chop;
+ 	m:^\S+/(.+)\.[a-zA-Z0-9]+$: || die "Bad line $_";
     $basefile = "$1";
     $fullfile=$_;
+    $numchannels=`soxi -c $fullfile`;
+        
     if (exists($uemstuff{$basefile})) {
+        # TODO: Multichannel UEM stuff
         foreach $n (sort {$a <=> $b} keys %{$uemstuff{$basefile}}) {
             $newsegname=sprintf("%s.%02d", $basefile, $n);
             $duration=$uemstuff{$basefile}{$n}{end}-$uemstuff{$basefile}{$n}{start};
             system("sox $fullfile $ARGV[0]/foo.wav trim $uemstuff{$basefile}{$n}{start} $duration");
             do_diarization($uemstuff{$basefile}{$n}{start});
         }
+       if ($numchannels==2) {
+       	print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - remix 1,2 |\n";
+       } else {
+       	print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - |\n";
+       }
     } else {
         $newsegname=$basefile;
-        system("cp -a $fullfile $ARGV[0]/foo.wav");
+        system("sox $fullfile $ARGV[0]/foo.wav");
         do_diarization(0);      # no uem, so file starts at 0
+        if  ($ARGV[1] eq 'true') {            
+            for my $ch (1..$numchannels) {
+                print SCP "$basefile.$ch sox $fullfile -r 16k -e signed-integer -t wav - remix $ch |\n";
+            }
+        } else {
+        		if ($numchannels==2) {
+            	print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - remix 1,2 |\n";
+            } else {
+            	print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - |\n";
+            }
+        }
     }
     print STDERR "\n";
-
-    print SCP "$basefile sox $fullfile -r 16k -e signed-integer -t wav - remix 1,2 |\n";
 }
 
 # create spk2gender file
