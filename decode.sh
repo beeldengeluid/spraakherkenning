@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# extra test line
+
 #
 #   This script is used to decode all audio (.wav) in a source directory and produce transcriptions in a target directory
 #
