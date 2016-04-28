@@ -64,10 +64,10 @@ acwt=0.083333           # Acoustic weight used in getting fMLLR transforms, and 
 beam=13.0
 lattice_beam=6.0
 
-modeltype="nnet_bn"		# or fmmi, or nnet, or fmmlr, or sggm
+modeltype="nnet_bn"			# or fmmi, or nnet, or fmmlr, or sggm
 
 rnn=false               # if true, do RNN rescoring
-rnnnbest=1000           # if doing RNN rescoring use this amount of alternatives
+rnnnbest=1000            # if doing RNN rescoring use this amount of alternatives
 rnnweight=0.5           # relative weight of RNN in rescoring
 
 cts=false                       # if true, use CTS models for sections that were detected as CTS by the diarization. Else use BN models.
